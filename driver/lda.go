@@ -9,14 +9,28 @@ import (
 	"time"
 	"sort"
 	"runtime"
+	// "runtime/pprof"
+	// "log"
+	// "os"
 )
 
 
 func main() {
 	
+	// pprof
+    // f, err := os.Create("prof.out")
+    // if err != nil {
+    //     log.Fatal(err)
+    // }
+    // pprof.StartCPUProfile(f)
+    // defer pprof.StopCPUProfile()
+	
+	
 	// handle option parsing
 	// hard-coded for now
-	sample_fname := "/Users/steven/Dropbox/Steven/LDA/mi.gerd.bc.2011.txt"	
+	sample_fname := "/Users/steven/Dropbox/Steven/LDA/mi.gerd.bc.2011.title.abstract.txt"
+	// sample_fname := "/Users/steven/Dropbox/Steven/LDA/mi.gerd.bc.2011.txt"	
+	// sample_fname := "/Users/steven/Dropbox/Steven/LDA/test_input.txt"	
 	
 	// load input file into list of strings
 	contents, err := ioutil.ReadFile(sample_fname)
@@ -28,20 +42,36 @@ func main() {
 	lines := strings.Split(string(contents), "\n")		
 	
 	// processing- lowercase, downsampling, normalizing, pruning, stopword removal, etc.
-	report_token_limit := 5
+	should_lowercase := true // TODO: get from optparse
+	remove_stopwords := true
+	remove_non_words := true
+	remove_solo_digits := true
 	
 	// turn list of strings into token vectors
 	var tokenss [][]string
 	for _, s := range(lines) {
-		if len(strings.TrimSpace(s)) > 0 {
-			tokenss = append(tokenss, util.Tokenize(s))
+		if len(strings.TrimSpace(s)) > 0 {			
+			temp_tokens := util.Tokenize(s, should_lowercase)
+			if remove_stopwords {
+				temp_tokens = util.FilterStopwords(temp_tokens)
+			}
+			
+			if remove_non_words {
+				temp_tokens = util.FilterNonAlpha(temp_tokens)
+			}
+			
+			if remove_solo_digits {
+				temp_tokens = util.FilterOnlyNumbers(temp_tokens)
+			}
+			
+			tokenss = append(tokenss, temp_tokens)
 		}
 	}
 	
 	fmt.Println("num samples: ", len(tokenss))
-	
-	// set gomaxprocs
-	runtime.GOMAXPROCS(2)
+
+	// s t gomaxprocs
+	runtime.GOMAXPROCS(7) //runtime.NumCPU())
 	
 	// get rid of common tokens if needed
 
@@ -49,7 +79,16 @@ func main() {
 	
 	// New model:
 	// TODO: all should be configured using option parsing
-	l := model.NewModeler(5, 1.0, 1.0, 1000, 1, 0)
+	ntopics := 10
+	alpha := 0.01
+	beta := 0.01
+	iterations := 1000
+	repetitions := 5
+	seed := 0
+	parallel := true
+	report_token_limit := 10
+	
+	l := model.NewModeler(ntopics, alpha, beta, iterations, repetitions, seed, parallel)
 	start_time := time.Now()
 	l.Model(tokenss)
 	fmt.Printf("Elapsed time: %s\n", time.Since(start_time))
