@@ -11,17 +11,53 @@ import (
 // maps a string->string function over a slice of strings
 func StringMap(dat []string, f func(string)string) []string {
 	to_ret := make([]string, len(dat))
-	for idx, s := range(dat) {
+	for idx, s := range(dat) {		
 		to_ret[idx] = f(s)
 	}
 	return to_ret
 }
 
 // implements SPUD's simple tokenization algorithm
-func Tokenize(s string) []string {
+func Tokenize(s string, lowercase bool) []string {
 	patt, _ := regexp.Compile("[\\.\\?\\!,:;\\(\\)\\'\\\"]")
 	proc_s := patt.ReplaceAllString(s, " ")
+	if lowercase {
+		proc_s = strings.ToLower(proc_s)
+	}
 	return StringMap(strings.Fields(proc_s), strings.TrimSpace)
+}
+
+// TODO: maybe re-write in a more "generator"-y way, with channels? 
+
+func FilterStopwords(s_list []string) []string {
+	to_ret := []string{}
+	for _, s := range(s_list) {
+		if !IsStopWord(s) {
+			to_ret = append(to_ret, s)
+		}
+	}
+	return to_ret
+}
+
+// get rid of anything that doesn't match a regex
+func FilterRegex(s_list []string, patt *regexp.Regexp) []string {
+	to_ret := []string{}
+	for _, s := range(s_list) {
+		if patt.MatchString(s) {
+			to_ret = append(to_ret, s)
+		}
+	}
+	return to_ret
+}
+
+func FilterNonAlpha(s_list []string) []string {
+	word_chars, _ := regexp.Compile("^\\w+$")
+	return FilterRegex(s_list, word_chars)
+}
+
+func FilterOnlyNumbers(s_list []string) []string {
+	only_digits, _ := regexp.Compile("^[^\\d]+$")
+	return FilterRegex(s_list, only_digits)
 }
 
 // TODO: is there a better way to handle this?
