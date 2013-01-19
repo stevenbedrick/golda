@@ -9,10 +9,12 @@ import (
 	"time"
 	"sort"
 	"runtime"
+	"flag"
 	// "runtime/pprof"
 	// "log"
 	// "os"
 )
+
 
 
 func main() {
@@ -25,15 +27,29 @@ func main() {
     // pprof.StartCPUProfile(f)
     // defer pprof.StopCPUProfile()
 	
-	
-	// handle option parsing
-	// hard-coded for now
-	sample_fname := "/Users/steven/Dropbox/Steven/LDA/mi.gerd.bc.2011.title.abstract.txt"
-	// sample_fname := "/Users/steven/Dropbox/Steven/LDA/mi.gerd.bc.2011.txt"	
-	// sample_fname := "/Users/steven/Dropbox/Steven/LDA/test_input.txt"	
-	
 	// load input file into list of strings
-	contents, err := ioutil.ReadFile(sample_fname)
+
+	var default_file = "/Users/steven/Dropbox/Steven/LDA/mi.gerd.bc.2011.title.abstract.txt"
+	// var default_file = "/Users/steven/Dropbox/Steven/LDA/mi.gerd.bc.2011.txt"
+	// var default_file = "/Users/steven/Dropbox/Steven/LDA/test_input.txt"	
+
+	var sample_fname = flag.String("input", default_file, "Input file to use. One line per record.")
+	var should_lowercase = flag.Bool("lowercase", true, "Lowercase text as pre-processing step.")
+	var remove_stopwords = flag.Bool("stopwords", true, "Remove common English stopwords as a pre-processing step.")
+	var remove_non_words = flag.Bool("remove_non_words", true, "Remove tokens that contain non-alphanumeric ([\\w]) characters. NOT recommended in Unicode-sensitive contexts.")
+	var remove_solo_digits = flag.Bool("remove_solo_digits", true, "Remove tokens that consist entirely of digits.")
+	var ntopics = flag.Int("ntopics", 10, "Number of topics.")
+	var alpha = flag.Float64("alpha", 0.01, "Alpha parameter- hyperparameter for Dirichelt prior on the document-topic distribution.")
+	var beta = flag.Float64("beta", 0.01, "Beta parameter- hyperparameter for Dirichlet prior on topic-word distribution.")
+	var iterations = flag.Int("iterations", 100, "Number of iterations to run.")
+	var repetitions = flag.Int("repetitions", 5, "Number of repetitions to average.")
+	var seed = flag.Int("seed", 0, "RNG seed. Probably best left alone.")
+	var parallel = flag.Bool("parallel", true, "Process repetitions in parallel.")
+	var report_token_limit = flag.Int("report_token_limit", 10, "Number of tokens to report.")
+
+	flag.Parse()
+
+	contents, err := ioutil.ReadFile(*sample_fname)
 	if err != nil {
 		fmt.Println("Problem reading file: " + err.Error())
 		return
@@ -42,25 +58,20 @@ func main() {
 	lines := strings.Split(string(contents), "\n")		
 	
 	// processing- lowercase, downsampling, normalizing, pruning, stopword removal, etc.
-	should_lowercase := true // TODO: get from optparse
-	remove_stopwords := true
-	remove_non_words := true
-	remove_solo_digits := true
-	
 	// turn list of strings into token vectors
 	var tokenss [][]string
 	for _, s := range(lines) {
 		if len(strings.TrimSpace(s)) > 0 {			
-			temp_tokens := util.Tokenize(s, should_lowercase)
-			if remove_stopwords {
+			temp_tokens := util.Tokenize(s, *should_lowercase)
+			if *remove_stopwords {
 				temp_tokens = util.FilterStopwords(temp_tokens)
 			}
 			
-			if remove_non_words {
+			if *remove_non_words {
 				temp_tokens = util.FilterNonAlpha(temp_tokens)
 			}
 			
-			if remove_solo_digits {
+			if *remove_solo_digits {
 				temp_tokens = util.FilterOnlyNumbers(temp_tokens)
 			}
 			
@@ -79,16 +90,16 @@ func main() {
 	
 	// New model:
 	// TODO: all should be configured using option parsing
-	ntopics := 10
-	alpha := 0.01
-	beta := 0.01
-	iterations := 1000
-	repetitions := 5
-	seed := 0
-	parallel := true
-	report_token_limit := 10
+	// ntopics := 10
+	// alpha := 0.01
+	// beta := 0.01
+	// iterations := 1000
+	// repetitions := 5
+	// seed := 0
+	// parallel := true
+	// report_token_limit := 10
 	
-	l := model.NewModeler(ntopics, alpha, beta, iterations, repetitions, seed, parallel)
+	l := model.NewModeler(*ntopics, *alpha, *beta, *iterations, *repetitions, *seed, *parallel)
 	start_time := time.Now()
 	l.Model(tokenss)
 	fmt.Printf("Elapsed time: %s\n", time.Since(start_time))
@@ -100,7 +111,7 @@ func main() {
 		t_probs := model.TokenProbsFromMap(dx)
 		sort.Sort(model.ByProb{t_probs})
 		// Sort() goes in ascending order, and we want descending- so walk backwards from the end
-		for i := len(t_probs) - 1; i >= len(t_probs) - report_token_limit; i-- {
+		for i := len(t_probs) - 1; i >= len(t_probs) - *report_token_limit; i-- {
 			this_tok_prob := t_probs[i]
 			fmt.Printf("\t%s = %0.4f\n", this_tok_prob.Token, this_tok_prob.Probability)
 		} 
