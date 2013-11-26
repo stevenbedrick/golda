@@ -18,8 +18,8 @@ type LdaModeler struct {
 	seed int
 	parallel bool
 		
-	last_model_document_topic_probability_assignments [][]float64
-	last_model_topic_token_probability_assignments []map[string]float64
+	last_model_document_topic_probability_assignments [][]float64 // stores the topic distribution for each document
+	last_model_topic_token_probability_assignments []util.TokenProbMap // maps tokens to probabiligies
 	last_model_token_topic_sample_assignments [][]int
 	last_model_token_log_likelihood_given_topic_model float64
 	last_model_sample_token_perplexity_given_topic_model float64
@@ -37,47 +37,25 @@ func NewModeler(ntopics int, alpha float64, beta float64, iterations int, repeti
 	}
 }
 
-// this is support code to make it easier to sort the results
-type TokenProb struct {
-	Token string
-	Probability float64
-}
-
-type TokenProbs []*TokenProb
-type ByToken struct{ TokenProbs }
-type ByProb struct{ TokenProbs }
-
-func (t TokenProbs) Len() int { return len(t) }
-func (t TokenProbs) Swap(i, j int) { t[i], t[j] = t[j], t[i] }
-func (t ByToken) Less(i, j int) bool { return t.TokenProbs[i].Token < t.TokenProbs[j].Token }
-func (t ByProb) Less(i, j int) bool { return t.TokenProbs[i].Probability < t.TokenProbs[j].Probability }
-
-func TokenProbsFromMap(input map[string]float64) TokenProbs {
-	to_return := TokenProbs{}
-	for t, p := range(input) {
-		to_return = append(to_return, &TokenProb{t, p})
-	}
-	return to_return
-}
 
 // returns a slice- one entry per topic- of token probabilities
-func (l *LdaModeler) GetTopicTokenProbabilityAssignments() []map[string]float64 {
+func (l *LdaModeler) GetTopicTokenProbabilityAssignments() []util.TokenProbMap {
 	return l.last_model_topic_token_probability_assignments
 }
 
 // stores the results of a modeling run- hopefully, using pointers like this will help cut down on reallocation.
 type ModelResults struct {	
 	theta_hat_ds *[][]float64
-	phi_hats *[]map[string]float64
+	phi_hats *[]util.TokenProbMap // stores token-prob maps for each topic
 	log_likelihood float64
 	perplexity float64
 }
 
-func (l *LdaModeler) Model(tokenss [][]string) {
+func (l *LdaModeler) Model(tokenss []util.Document) {
 	
 	// these guys hold the results of each "run", so that they can be averaged at the end
 	theta_hat_ds_samples := make([]*[][]float64, l.repetitions)
-	phi_hats_samples := make([]*[]map[string]float64, l.repetitions)
+	phi_hats_samples := make([]*[]util.TokenProbMap, l.repetitions)
 	log_likelihood_samples := make([]float64, l.repetitions)
 	perplexity_samples := make([]float64, l.repetitions)
 	
@@ -153,10 +131,10 @@ func (l *LdaModeler) Model(tokenss [][]string) {
 	
 	
 	// phi_hats
-	phi_hats := make([]map[string]float64, len(*phi_hats_samples[0]))
+	phi_hats := make([]util.TokenProbMap, len(*phi_hats_samples[0]))
 	for topic_idx := 0; topic_idx < len(*phi_hats_samples[0]); topic_idx++ {
 		// build list of topic dicts for each topic from each rep
-		this_topic := make([]map[string]float64, len(phi_hats_samples))
+		this_topic := make([]util.TokenProbMap, len(phi_hats_samples))
 		for rep_idx := 0; rep_idx < len(phi_hats_samples); rep_idx++ {
 			this_topic[rep_idx] = (*phi_hats_samples[rep_idx])[topic_idx]
 		}
@@ -187,7 +165,7 @@ func (l *LdaModeler) resample(r float64, values []float64, values_sum float64) i
 	return len(values) - 1.0
 }
 
-func (l *LdaModeler) model_one_pass(tokenss_ptr *[][]string, seed int, initial_topicss [][]int) *ModelResults {
+func (l *LdaModeler) model_one_pass(tokenss_ptr *[]util.Document, seed int, initial_topicss [][]int) *ModelResults {
 	 // log.Printf("we're in %p\n", l)
 	 // log.Printf("from %p: address of initial_topicss: %p\n", l, &initial_topicss)
 	tokenss := *tokenss_ptr
@@ -227,7 +205,7 @@ func (l *LdaModeler) model_one_pass(tokenss_ptr *[][]string, seed int, initial_t
 	}
 
 	document_topics_counts := make([][]int, len(tokenss))
-	topic_words_counts := make([]map[string]int, ntopics) // maps in Go will, if asked for an element that doesn't exist, give the zero-value for that type (as well as an optional second return value indicating whether it was found or not) http://golang.org/doc/effective_go.html#maps
+	topic_words_counts := make([]map[util.Token]int, ntopics) // maps in Go will, if asked for an element that doesn't exist, give the zero-value for that type (as well as an optional second return value indicating whether it was found or not) http://golang.org/doc/effective_go.html#maps
 	total_topic_counts := make([]int, ntopics) // n.b.: the values in a "fresh" just-made slice are the zero-value for that type. 
 	
 	for i, tokens := range(tokenss) { // for each document
@@ -237,7 +215,7 @@ func (l *LdaModeler) model_one_pass(tokenss_ptr *[][]string, seed int, initial_t
 			topic := topics[j]
 			counts[topic] += 1 // count of topic mentions in this document
 			if topic_words_counts[topic] == nil {
-				topic_words_counts[topic] = map[string]int{}
+				topic_words_counts[topic] = map[util.Token]int{}
 			}
 			topic_words_counts[topic][token] += 1 // count tokens mentions for this topic
 			total_topic_counts[topic] += 1 // total count of this topic
@@ -245,7 +223,7 @@ func (l *LdaModeler) model_one_pass(tokenss_ptr *[][]string, seed int, initial_t
 		document_topics_counts[i] = counts // = append(document_topics_counts, counts)
 	}
 
-	all_keys := make([][]string, len(range_ntopics))
+	all_keys := make([][]util.Token, len(range_ntopics)) // a set of per-topic vocab lists
 	for i := range(range_ntopics) {
 		all_keys[i] = util.KeysFromMap(topic_words_counts[i])
 	}
@@ -357,11 +335,11 @@ func (l *LdaModeler) model_one_pass(tokenss_ptr *[][]string, seed int, initial_t
 	
 	
 	// compute topic-token assignments (phi_hat_w_j in paper)
-	phi_hats := make([]map[string]float64, ntopics)
+	phi_hats := make([]util.TokenProbMap, ntopics)
 	for t := 0; t < ntopics; t++ { // for each topic
-		dx := map[string]float64{}
+		dx := util.TokenProbMap{}
 		for token, top_tok_count := range(topic_words_counts[t]) { // for each token
-			dx[token] = (float64(top_tok_count) + beta) / (float64(total_topic_counts[t]) + betaW)
+			dx[token] = util.Probability((float64(top_tok_count) + beta) / (float64(total_topic_counts[t]) + betaW))
 		}
 		phi_hats[t] = dx
 	}
@@ -397,7 +375,7 @@ func (l *LdaModeler) model_one_pass(tokenss_ptr *[][]string, seed int, initial_t
 		for _, w := range(tokens) { // each token
 			temp_phi_hat_theta_hat := make([]float64, len(range_ntopics))
 			for j, z := range(range_ntopics) { // each topic
-				temp_phi_hat_theta_hat[j] = phi_hats[z][w] * theta_hat_d[z]
+				temp_phi_hat_theta_hat[j] = float64(phi_hats[z][w]) * theta_hat_d[z]
 			}
 			perplexity += math.Log2(util.SumFloat(temp_phi_hat_theta_hat ))	
 			ntokens += 1

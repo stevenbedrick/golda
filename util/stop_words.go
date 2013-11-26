@@ -1,6 +1,6 @@
 package util
 
-var stop_words map[string]bool = map[string]bool{
+var stop_words map[Token]bool = map[Token]bool{
 	  "a": true,
 	  "able": true,
 	  "about": true,
@@ -526,6 +526,6 @@ var stop_words map[string]bool = map[string]bool{
 	  "zero": true,
 }
   
-func IsStopWord(s string) bool {
+func IsStopWord(s Token) bool {
 	return stop_words[s]
 }

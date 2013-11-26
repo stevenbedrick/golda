@@ -58,8 +58,8 @@ func main() {
 	lines := strings.Split(string(contents), "\n")		
 	
 	// processing- lowercase, downsampling, normalizing, pruning, stopword removal, etc.
-	// turn list of strings into token vectors
-	var tokenss [][]string
+	// turn list of strings into Documents (token vectors)
+	var tokenss []util.Document
 	for _, s := range(lines) {
 		if len(strings.TrimSpace(s)) > 0 {			
 			temp_tokens := util.Tokenize(s, *should_lowercase)
@@ -75,7 +75,7 @@ func main() {
 				temp_tokens = util.FilterOnlyNumbers(temp_tokens)
 			}
 			
-			tokenss = append(tokenss, temp_tokens)
+			tokenss = append(tokenss, util.Document(temp_tokens))
 		}
 	}
 	
@@ -108,12 +108,12 @@ func main() {
 	// Reporting results
 	for topic, dx := range(l.GetTopicTokenProbabilityAssignments()) {
 		fmt.Printf("TOPIC %d:\n", topic)
-		t_probs := model.TokenProbsFromMap(dx)
-		sort.Sort(model.ByProb{t_probs})
+		t_probs := dx.TokenProbsFromMap()
+		sort.Sort(util.ByProb{t_probs})
 		// Sort() goes in ascending order, and we want descending- so walk backwards from the end
 		for i := len(t_probs) - 1; i >= len(t_probs) - *report_token_limit; i-- {
 			this_tok_prob := t_probs[i]
-			fmt.Printf("\t%s = %0.4f\n", this_tok_prob.Token, this_tok_prob.Probability)
+			fmt.Printf("\t%s = %0.4f\n", this_tok_prob.Tok, this_tok_prob.Prob)
 		} 
 	}
 
